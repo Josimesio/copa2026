@@ -1,6 +1,3 @@
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-import socket
-from urllib.parse import urlparse
 from datetime import datetime, timedelta
 import json, os, re
 
@@ -16,7 +13,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USERS_DIR = os.path.join(BASE_DIR, 'usuarios')
 DATA_DIR = os.path.join(BASE_DIR, 'dados')
 MATCHES_FILE = os.path.join(DATA_DIR, 'jogos.json')
-PORT = 8080
+PORT = int(os.environ.get('PORT', 8080))
 ADMIN_USER = 'admin'
 ADMIN_PASS = 'admin2026'
 
@@ -285,59 +282,117 @@ def calc_standings(matches):
         h['SG']=h['GP']-h['GC']; a['SG']=a['GP']-a['GC']
     return {g: sorted(list(v.values()), key=lambda x:(-x['Pts'],-x['SG'],-x['GP'],x['GC'],x['Seleção'])) for g,v in table.items()}
 
-class Handler(SimpleHTTPRequestHandler):
-    def end_json(self, payload, code=200):
-        b=json.dumps(payload, ensure_ascii=False).encode('utf-8')
-        self.send_response(code); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b)
-    def read_json(self):
-        length=int(self.headers.get('Content-Length',0)); return json.loads(self.rfile.read(length).decode('utf-8') or '{}')
-    def do_GET(self):
-        p=urlparse(self.path).path
-        if p == '/api/jogos':
-            matches=load_matches(); self.end_json({'ok':True,'matches':matches,'standings':calc_standings(matches)}); return
-        if p.startswith('/api/apostas/'):
-            login=p.split('/')[-1]; self.end_json({'ok':True,'bets':load_user_bets(login)}); return
-        return super().do_GET()
-    def do_POST(self):
-        try:
-            p=urlparse(self.path).path; data=self.read_json()
-            if p == '/api/criar-usuario':
-                login=safe_login(data.get('login')); password=str(data.get('password','')).strip(); nome=str(data.get('nome','')).strip()
-                if len(login)<3: self.end_json({'ok':False,'erro':'Login deve ter pelo menos 3 caracteres.'}); return
-                if len(password)<4: self.end_json({'ok':False,'erro':'Senha deve ter pelo menos 4 caracteres.'}); return
-                ok,msg=create_user_file(login,password,nome); self.end_json({'ok':ok,'mensagem': f'Usuário criado. Planilha: usuarios/{login}.xlsx' if ok else msg}); return
-            if p == '/api/login':
-                login=safe_login(data.get('login')); password=str(data.get('password','')).strip()
-                if login==ADMIN_USER and password==ADMIN_PASS: self.end_json({'ok':True,'tipo':'admin','mensagem':'Administrador conectado.'}); return
-                ok,msg=validate_user(login,password); self.end_json({'ok':ok,'tipo':'usuario' if ok else None,'mensagem':msg}); return
-            if p == '/api/apostar':
-                login=safe_login(data.get('login')); password=str(data.get('password','')).strip()
-                ok,msg=validate_user(login,password)
-                if not ok: self.end_json({'ok':False,'erro':msg}); return
-                ok,msg=update_bet(login, data.get('match_id'), data.get('bet_home'), data.get('bet_away'))
-                self.end_json({'ok':ok,'mensagem':msg,'erro':None if ok else msg}); return
-            if p == '/api/admin/salvar-resultados':
-                if data.get('admin_user') != ADMIN_USER or data.get('admin_pass') != ADMIN_PASS: self.end_json({'ok':False,'erro':'Administrador inválido.'}); return
-                save_matches(data.get('matches',[])); self.end_json({'ok':True,'mensagem':'Resultados salvos em dados/jogos.json'}); return
-            self.end_json({'ok':False,'erro':'Endpoint não encontrado.'},404)
-        except Exception as e:
-            self.end_json({'ok':False,'erro':str(e)},500)
+
+from flask import Flask, request, jsonify, send_from_directory
+
+# WSGI app exigido pelo Render/Gunicorn:
+# Start Command no Render: gunicorn app:app
+app = Flask(__name__, static_folder=BASE_DIR, static_url_path='')
+
+@app.before_request
+def _prepare_app():
+    ensure_dirs()
+    load_matches()
+
+@app.route('/')
+def index():
+    index_path = os.path.join(BASE_DIR, 'index.html')
+    if os.path.exists(index_path):
+        return send_from_directory(BASE_DIR, 'index.html')
+    return '<h1>Bolão Copa 2026 Pluma</h1><p>Arquivo index.html não encontrado na raiz do projeto.</p>', 200
+
+@app.route('/<path:filename>')
+def static_files(filename):
+    # Serve arquivos do site: style.css, script.js, imagens, etc.
+    # Bloqueia acesso direto às planilhas e pastas internas.
+    blocked_prefixes = ('usuarios/', 'dados/', '.git/', '__pycache__/')
+    normalized = filename.replace('\\', '/')
+    if normalized.startswith(blocked_prefixes) or normalized.endswith('.xlsx'):
+        return jsonify({'ok': False, 'erro': 'Acesso não permitido.'}), 403
+    target = os.path.join(BASE_DIR, filename)
+    if os.path.exists(target) and os.path.isfile(target):
+        return send_from_directory(BASE_DIR, filename)
+    return jsonify({'ok': False, 'erro': 'Arquivo não encontrado.'}), 404
+
+@app.route('/api/jogos', methods=['GET'])
+def api_jogos():
+    matches = load_matches()
+    return jsonify({'ok': True, 'matches': matches, 'standings': calc_standings(matches)})
+
+@app.route('/api/apostas/<login>', methods=['GET'])
+def api_apostas(login):
+    return jsonify({'ok': True, 'bets': load_user_bets(login)})
+
+@app.route('/api/criar-usuario', methods=['POST'])
+def api_criar_usuario():
+    data = request.get_json(silent=True) or {}
+    login = safe_login(data.get('login'))
+    password = str(data.get('password', '')).strip()
+    nome = str(data.get('nome', '')).strip()
+
+    if len(login) < 3:
+        return jsonify({'ok': False, 'erro': 'Login deve ter pelo menos 3 caracteres.'})
+    if len(password) < 4:
+        return jsonify({'ok': False, 'erro': 'Senha deve ter pelo menos 4 caracteres.'})
+
+    ok, msg = create_user_file(login, password, nome)
+    return jsonify({
+        'ok': ok,
+        'mensagem': f'Usuário criado. Planilha: usuarios/{login}.xlsx' if ok else msg,
+        'erro': None if ok else msg
+    })
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.get_json(silent=True) or {}
+    login = safe_login(data.get('login'))
+    password = str(data.get('password', '')).strip()
+
+    if login == ADMIN_USER and password == ADMIN_PASS:
+        return jsonify({'ok': True, 'tipo': 'admin', 'mensagem': 'Administrador conectado.'})
+
+    ok, msg = validate_user(login, password)
+    return jsonify({'ok': ok, 'tipo': 'usuario' if ok else None, 'mensagem': msg, 'erro': None if ok else msg})
+
+@app.route('/api/apostar', methods=['POST'])
+def api_apostar():
+    data = request.get_json(silent=True) or {}
+    login = safe_login(data.get('login'))
+    password = str(data.get('password', '')).strip()
+
+    ok, msg = validate_user(login, password)
+    if not ok:
+        return jsonify({'ok': False, 'erro': msg})
+
+    ok, msg = update_bet(login, data.get('match_id'), data.get('bet_home'), data.get('bet_away'))
+    return jsonify({'ok': ok, 'mensagem': msg, 'erro': None if ok else msg})
+
+@app.route('/api/admin/salvar-resultados', methods=['POST'])
+def api_admin_salvar_resultados():
+    data = request.get_json(silent=True) or {}
+    if data.get('admin_user') != ADMIN_USER or data.get('admin_pass') != ADMIN_PASS:
+        return jsonify({'ok': False, 'erro': 'Administrador inválido.'})
+
+    save_matches(data.get('matches', []))
+    return jsonify({'ok': True, 'mensagem': 'Resultados salvos em dados/jogos.json'})
+
+@app.errorhandler(404)
+def not_found(_):
+    return jsonify({'ok': False, 'erro': 'Endpoint não encontrado.'}), 404
+
+@app.errorhandler(Exception)
+def internal_error(e):
+    return jsonify({'ok': False, 'erro': str(e)}), 500
 
 if __name__ == '__main__':
-    ensure_dirs(); load_matches()
-    os.chdir(BASE_DIR)
-    HOST = '0.0.0.0'
-    try:
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
-    except Exception:
-        local_ip = 'SEU_IP_DA_REDE'
+    ensure_dirs()
+    load_matches()
 
     print('===========================================')
     print(' Bolão Copa 2026 Pluma')
     print('===========================================')
     print(f'Rodando localmente em: http://localhost:{PORT}')
-    print(f'Para outros computadores da rede, tente: http://{local_ip}:{PORT}')
-    print('Se não abrir em outro computador, libere a porta 8080 no Firewall do Windows.')
+    print(f'Rodando na rede em: http://0.0.0.0:{PORT}')
     print('===========================================')
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+
+    app.run(host='0.0.0.0', port=PORT)
