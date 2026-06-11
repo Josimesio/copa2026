@@ -1,0 +1,46 @@
+BOLÃO COPA 2026 PLUMA
+
+Como rodar na sua máquina:
+1. Extraia o ZIP.
+2. Dê duplo clique em iniciar_site.bat.
+3. No seu computador, acesse: http://localhost:8080
+
+Como liberar para outros usuários da mesma rede:
+1. Execute liberar_firewall_porta_8080.bat como Administrador.
+2. Execute ver_meu_ip.bat e copie o IPv4 da sua rede.
+3. Passe para os usuários o link neste formato:
+   http://SEU_IPV4:8080
+
+Exemplo:
+   http://172.28.32.1:8080
+
+IMPORTANTE:
+- O app.py agora roda em 0.0.0.0:8080, ou seja, aceita conexão de outros computadores da rede.
+- Se outro usuário não conseguir abrir, normalmente é Firewall do Windows, VPN, rede diferente ou IP errado.
+- O computador servidor precisa ficar ligado e com o iniciar_site.bat aberto.
+
+Admin:
+Login: admin
+Senha: admin2026
+
+O que esta versão faz:
+- Participante cria login e senha.
+- Gera planilha individual em usuarios/LOGIN.xlsx.
+- Valida login e senha pela planilha.
+- Grava cada aposta e cada alteração em LOG_APOSTAS.
+- Exibe horário do jogo em horário de Brasília e estádio abaixo de cada aposta.
+- Bloqueia aposta 5 minutos antes do horário cadastrado do jogo.
+- Admin pode ajustar horário do jogo e lançar resultado oficial.
+
+Arquivos importantes:
+- app.py: servidor do bolão.
+- index.html/style.css/script.js: tela do sistema.
+- usuarios/: planilhas individuais dos participantes.
+- dados/jogos.json: jogos, horários, estádios e resultados.
+
+
+AJUSTE DESTA VERSAO:
+- Porta alterada de 8000 para 8080.
+- app.py roda em 0.0.0.0:8080.
+- Use liberar_firewall_porta_8080.bat como Administrador.
+- Use testar_servidor_8080.bat para confirmar se aparece 0.0.0.0:8080 LISTENING.

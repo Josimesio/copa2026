@@ -1,0 +1,12 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Bolão Copa 2026 Pluma</title><link rel="stylesheet" href="style.css"></head><body>
+<header><div><p>Pluma Agroavícola</p><h1>Bolão Copa 2026 Pluma</h1><span>Aposte até 5 minutos antes do início do jogo. Depois trava. Sem choro no VAR.</span></div></header>
+<main>
+<section id="auth" class="card grid2">
+ <div><h2>Entrar</h2><input id="login" placeholder="Login"><input id="senha" type="password" placeholder="Senha"><button onclick="entrar()">Entrar</button><p class="muted">Admin: admin / admin2026</p></div>
+ <div><h2>Criar usuário para apostar</h2><input id="novoNome" placeholder="Nome"><input id="novoLogin" placeholder="Login"><input id="novaSenha" type="password" placeholder="Senha"><button onclick="criarUsuario()">Criar usuário</button><p class="muted">Ao criar, o sistema gera uma planilha individual em <b>usuarios/</b>.</p></div>
+</section>
+<section id="session" class="card hidden"><b id="who"></b><button class="secondary" onclick="sair()">Sair</button></section>
+<section id="msg" class="msg hidden"></section>
+<section id="userArea" class="hidden"><h2>Minhas apostas</h2><div id="games" class="games"></div></section>
+<section id="adminArea" class="hidden"><h2>Administração dos resultados</h2><p class="muted">Aqui o administrador lança o placar real dos jogos. Isso atualiza a classificação geral.</p><div id="adminGames" class="games"></div><button onclick="salvarResultados()">Salvar resultados oficiais</button><h2>Classificação</h2><div id="standings" class="standings"></div></section>
+</main><script src="script.js"></script></body></html>
